@@ -1,0 +1,370 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Digify</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <style>
+    /* --- GENERAL THEME --- */
+    body {
+      margin: 0;
+      font-family: 'Arial', sans-serif;
+      background-color: #0f0f1a;
+      color: #eee;
+      overflow-x: hidden;
+    }
+
+    h1,h2,h3 { color: #8c6eff; margin: 10px 0; }
+
+    nav {
+      background: #1a1a2e;
+      padding: 15px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    nav button {
+      background-color: #8c6eff;
+      border: none;
+      border-radius: 10px;
+      padding: 8px 15px;
+      cursor: pointer;
+      margin-left: 5px;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    nav button:hover {
+      transform: scale(1.05);
+      box-shadow: 0 0 10px #8c6eff;
+    }
+
+    .container {
+      max-width: 1100px;
+      margin: auto;
+      padding: 20px;
+    }
+
+    .flex { display: flex; flex-wrap: wrap; gap: 15px; }
+    .flex-col { display: flex; flex-direction: column; }
+
+    input, textarea {
+      border-radius: 8px;
+      border: none;
+      padding: 10px;
+      margin: 5px 0;
+      width: 100%;
+      background: #1b1b2b;
+      color: #eee;
+    }
+
+    button:hover { opacity: 0.9; }
+
+    .card {
+      background-color: #1b1b2b;
+      border-radius: 15px;
+      padding: 15px;
+      box-shadow: 0 5px 15px #000;
+      transition: transform 0.3s, box-shadow 0.3s;
+      opacity: 0;
+      transform: translateY(20px);
+      width: 220px;
+    }
+
+    .card.show {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .card img { max-width: 100%; border-radius: 10px; }
+
+    .hidden { display: none; }
+
+    /* Chat panel */
+    .chat-panel {
+      position: fixed;
+      right: -350px;
+      top: 0;
+      width: 300px;
+      height: 100%;
+      background: #1b1b2b;
+      padding: 10px;
+      transition: right 0.3s;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .chat-panel.show { right: 0; }
+
+    .chat-box {
+      flex: 1;
+      overflow-y: auto;
+      background: #222;
+      padding: 10px;
+      border-radius: 10px;
+      margin-bottom: 5px;
+    }
+
+    .chat-msg {
+      margin: 5px 0;
+      transition: opacity 0.3s;
+    }
+
+    /* Upload */
+    .upload-area {
+      border: 2px dashed #8c6eff;
+      border-radius: 15px;
+      padding: 30px;
+      text-align: center;
+      cursor: pointer;
+      transition: background 0.3s;
+      margin-bottom: 10px;
+    }
+
+    .upload-area:hover { background: #2a2a4d; }
+
+    .fade-in { animation: fadeIn 0.5s forwards; }
+
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+    /* Featured carousel */
+    .carousel { display: flex; overflow-x: auto; gap: 10px; padding-bottom: 10px; }
+    .carousel::-webkit-scrollbar { display: none; }
+
+    @media(max-width:700px){
+      .flex { flex-direction: column; }
+      .card { width: 100%; }
+      .chat-panel { width: 100%; right: -100%; }
+    }
+  </style>
+
+  <!-- FIREBASE SDK -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-app.js";
+    import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-auth.js";
+    import { getFirestore, collection, addDoc, getDocs, serverTimestamp } from "https://www.gstatic.com/firebasejs/12.7.0/firebase-firestore.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyCWK_LC-2leQsuytqvip3WlnqwM2wWvPUM",
+      authDomain: "digify-e3066.firebasestorage.app",
+      projectId: "digify-e3066",
+      storageBucket: "digify-e3066.firebasestorage.app",
+      messagingSenderId: "114814654456",
+      appId: "1:114814654456:web:93017bd5d4a39c770a280d"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const auth = getAuth(app);
+    const db = getFirestore(app);
+
+    const container = document.querySelector(".container");
+    const ADMIN_EMAIL = "youremail@example.com";
+    let currentUser = null;
+    let isAdmin = false;
+
+    // --- Utility: show temporary messages
+    function showMessage(msg) {
+      const p = document.createElement("p");
+      p.innerText = msg;
+      p.style.color = "#ff6b6b";
+      p.classList.add("fade-in");
+      container.prepend(p);
+      setTimeout(() => p.remove(), 5000);
+    }
+
+    // --- Auth observer
+    onAuthStateChanged(auth, user => {
+      currentUser = user;
+      if(user){
+        isAdmin = user.email === ADMIN_EMAIL;
+        loadDashboard();
+      } else {
+        showLogin();
+      }
+    });
+
+    // --- LOGIN/SIGNUP ---
+    function showLogin(){
+      container.innerHTML = `
+        <h1>Digify</h1>
+        <div class="flex-col">
+          <input id="email" type="email" placeholder="Email">
+          <input id="password" type="password" placeholder="Password">
+          <button id="loginBtn">Login</button>
+          <button id="signupBtn">Sign Up</button>
+        </div>
+      `;
+      document.getElementById("loginBtn").onclick = loginUser;
+      document.getElementById("signupBtn").onclick = registerUser;
+    }
+
+    async function loginUser(){
+      const email = document.getElementById("email").value;
+      const password = document.getElementById("password").value;
+      try {
+        await signInWithEmailAndPassword(auth,email,password);
+      } catch(err){
+        let msg="Login failed.";
+        switch(err.code){
+          case "auth/user-not-found": msg="Account does not exist."; break;
+          case "auth/wrong-password": msg="Invalid password."; break;
+          case "auth/invalid-email": msg="Invalid email."; break;
+        }
+        showMessage(msg);
+      }
+    }
+
+    async function registerUser(){
+      const email = document.getElementById("email").value;
+      const password = document.getElementById("password").value;
+      try {
+        await createUserWithEmailAndPassword(auth,email,password);
+        showMessage("Registration successful!");
+      } catch(err){
+        let msg="Registration failed.";
+        switch(err.code){
+          case "auth/email-already-in-use": msg="Email already registered."; break;
+          case "auth/weak-password": msg="Password must be at least 6 characters."; break;
+          case "auth/invalid-email": msg="Invalid email."; break;
+        }
+        showMessage(msg);
+      }
+    }
+
+    // --- DASHBOARD ---
+    function loadDashboard(){
+      container.innerHTML = `
+        <nav>
+          <h2>Digify</h2>
+          <div>
+            <button id="logoutBtn">Logout</button>
+            ${isAdmin ? '<button id="adminBtn">Admin Panel</button>' : ''}
+            <button id="uploadBtn">Upload Asset</button>
+            <button id="chatBtn">Chat</button>
+          </div>
+        </nav>
+        <div class="container flex-col">
+          <h2>Featured Assets</h2>
+          <div id="carousel" class="carousel"></div>
+          <h2>All Assets</h2>
+          <div id="assetsList" class="flex"></div>
+        </div>
+        <div id="chatPanel" class="chat-panel hidden">
+          <h3>Chat</h3>
+          <div class="chat-box" id="chatBox"></div>
+          <input id="chatInput" placeholder="Type a message">
+          <button id="sendMsg">Send</button>
+        </div>
+      `;
+      document.getElementById("logoutBtn").onclick = ()=> auth.signOut();
+      if(isAdmin) document.getElementById("adminBtn").onclick = showAdminPanel;
+      document.getElementById("uploadBtn").onclick = showUploadForm;
+      document.getElementById("chatBtn").onclick = toggleChat;
+      loadAssets();
+    }
+
+    async function loadAssets(){
+      const assetsList = document.getElementById("assetsList");
+      const carousel = document.getElementById("carousel");
+      assetsList.innerHTML = ""; carousel.innerHTML="";
+      const assetsSnap = await getDocs(collection(db,"assets"));
+      assetsSnap.forEach((doc,i)=>{
+        const data = doc.data();
+        const card = document.createElement("div");
+        card.className = "card";
+        card.innerHTML = `
+          <h3>${data.title}</h3>
+          <img src="${data.imageUrl}" alt="${data.title}">
+          <p>${data.description}</p>
+        `;
+        assetsList.appendChild(card);
+        setTimeout(()=>card.classList.add("show"), i*100);
+
+        // Add to carousel (first 5 only)
+        if(i<5){
+          const c = card.cloneNode(true);
+          c.style.width="200px";
+          carousel.appendChild(c);
+        }
+      });
+    }
+
+    function toggleChat(){
+      const chatPanel = document.getElementById("chatPanel");
+      chatPanel.classList.toggle("show");
+    }
+
+    // --- UPLOAD ---
+    function showUploadForm(){
+      container.innerHTML = `
+        <nav>
+          <h2>Upload Asset</h2>
+          <button id="backBtn">Back</button>
+        </nav>
+        <div class="upload-area" id="uploadArea">Drag or click to select file</div>
+        <input type="file" id="assetFile" class="hidden">
+        <input id="assetTitle" placeholder="Title">
+        <textarea id="assetDesc" placeholder="Description"></textarea>
+        <button id="submitAsset">Upload</button>
+        <div id="progressBar" style="height:5px;background:#8c6eff;width:0%;border-radius:5px;margin-top:5px;"></div>
+      `;
+      document.getElementById("backBtn").onclick = loadDashboard;
+      const uploadArea = document.getElementById("uploadArea");
+      const fileInput = document.getElementById("assetFile");
+      uploadArea.onclick = ()=> fileInput.click();
+      uploadArea.ondragover = e=>{ e.preventDefault(); uploadArea.style.background="#2a2a4d"; }
+      uploadArea.ondragleave = e=>{ e.preventDefault(); uploadArea.style.background=""; }
+      uploadArea.ondrop = e=>{
+        e.preventDefault();
+        fileInput.files = e.dataTransfer.files;
+      };
+      document.getElementById("submitAsset").onclick = uploadAsset;
+    }
+
+    async function uploadAsset(){
+      const title = document.getElementById("assetTitle").value;
+      const desc = document.getElementById("assetDesc").value;
+      const file = document.getElementById("assetFile").files[0];
+      if(!file){ showMessage("Select a file."); return; }
+
+      const formData = new FormData();
+      formData.append("file",file);
+      formData.append("upload_preset","digify_upload"); // <-- your preset
+
+      const progressBar = document.getElementById("progressBar");
+      progressBar.style.width="0%";
+
+      const res = await fetch("https://api.cloudinary.com/v1_1/YOUR_CLOUD_NAME/image/upload",{
+        method:"POST",
+        body:formData
+      });
+      const data = await res.json();
+      progressBar.style.width="100%";
+
+      await addDoc(collection(db,"assets"),{
+        title,
+        description: desc,
+        imageUrl: data.secure_url,
+        owner: currentUser.email,
+        createdAt: serverTimestamp()
+      });
+      showMessage("Asset uploaded!");
+      loadDashboard();
+    }
+
+    // --- ADMIN PANEL ---
+    function showAdminPanel(){
+      container.innerHTML = `<h2>Admin Panel</h2><p>Manage users, assets, transactions. Coming soon!</p><button onclick="loadDashboard()">Back</button>`;
+    }
+
+  </script>
+
+  <!-- Cloudinary Widget -->
+  <script src="https://widget.cloudinary.com/v2.0/global/all.js"></script>
+
+</head>
+<body>
+  <div class="container"></div>
+</body>
+</html>
